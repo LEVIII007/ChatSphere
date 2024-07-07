@@ -27,27 +27,7 @@ def get_chunks(text):
     chunks = text_splitter.split_text(text)
     return chunks
 
-from google.api_core import retry
-
-# def make_embed_text_fn(model):
-#     @retry.Retry(timeout=300.0)
-#     def embed_fn(text: str) -> list[float]:
-#         # Set the task_type to CLASSIFICATION.
-#         embedding = genai.embed_content(model=model, content=text, task_type="classification")
-#         return embedding['embedding']
-#     # print("empty embedding ========")
-#     return embed_fn
-
-# def get_embeddings(text):
-#     genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-#     model = 'models/embedding-001'
-#     try:
-#         embed_fn = make_embed_text_fn(model)
-#         embeddings = embed_fn(text)
-#         return embeddings
-#     except Exception as e:
-#         # logging.error(f"Error getting embeddings: {e}")
-#         return []
+# from google.api_core import retry
 
 def get_embeddings(text: str, model: str = 'models/embedding-001') -> list[float]:
     genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
@@ -64,12 +44,12 @@ def get_embeddings(text: str, model: str = 'models/embedding-001') -> list[float
         return []
 
 
-def save_url_embeddings_to_database(url, user, chat_name):
-    user_id = user  # Assuming 'user' has a 'user_id' attribute
+def save_url_embeddings_to_database(url, doc_id):
+    # user_id = user  # Assuming 'user' has a 'user_id' attribute
     genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
     mongodb_conn_string = os.getenv('MONGODB_CONN_STRING')
     db_name = os.getenv('DB_NAME')
-    collection_name = os.getenv('COLLECTION_NAME')
+    collection_name = os.getenv('EMB_COLLECTION_NAME')
     index_name = os.getenv('INDEX_NAME')
 
     client = pymongo.MongoClient(mongodb_conn_string)
@@ -78,32 +58,30 @@ def save_url_embeddings_to_database(url, user, chat_name):
 
     loader = WebBaseLoader(url)
     data = loader.load()
-    # print(data)
-    # print(type(data))
-
-    # docs = get_chunks(data)
 
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0, separators=[
                                                    "\n\n", "\n", "(?<=\. )", " "], length_function=len)
     docs = text_splitter.split_documents(data)
     embeddings = [get_embeddings(text.page_content) for text in docs]
-
+    flag = 0
     for text, embedding in zip(docs, embeddings):
+        flag += 1
         document = {
-            "chat": chat_name,
+            "doc_id": doc_id,
             "text": text.page_content,
             "embedding": embedding,
-            "user_id": user_id
         }
         collection.insert_one(document)
+        if flag == 15:
+            break
 
     print(f"Embeddings for URL '{url}' saved to database under user ID '{user_id}' and chat name '{chat_name}'.")
 
 
 from langchain_community.document_loaders import PyPDFLoader
 
-def save_pdf_embeddings_to_database(pdf_content, user, chat_name):
-    user_id = user  # Assuming 'user' has a 'user_id' attribute
+def save_pdf_embeddings_to_database(doc_id, pdf_content):
+    # user_id = user  # Assuming 'user' has a 'user_id' attribute
     genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
     mongodb_conn_string = os.getenv('MONGODB_CONN_STRING')
     db_name = os.getenv('DB_NAME')
@@ -126,10 +104,9 @@ def save_pdf_embeddings_to_database(pdf_content, user, chat_name):
 
     for text, embedding in zip(docs, embeddings):
         document = {
-            "chat": chat_name,
             "text": str(text),
             "embedding": embedding,
-            "user_id": user_id
+            "doc_id": user_id
         }
         collection.insert_one(document)
 
@@ -138,7 +115,7 @@ def save_pdf_embeddings_to_database(pdf_content, user, chat_name):
 
 
 # url = "https://en.wikipedia.org/wiki/AT%26T"
-# save_url_embeddings_to_database(url,{'user_id' : "abscefg"}, "chat_name")
+# save_url_embeddings_to_database(url,"668a9a784183c96dd2327c17")
 # save_pdf_embeddings_to_database("pdf.pdf", {'user_id' : "abscefg"}, "chat_name")
 
 

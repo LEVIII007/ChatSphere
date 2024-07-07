@@ -110,24 +110,33 @@ def login(request):
 
 @api_view(['POST'])
 def upload_file(request):
-    user = request.data.get('user')
-    chat_name = request.data.get('chat_name')
+    user_id = request.data.get('user_id')
+    chat_id = request.data.get('chat_id')
+
     if request.method == 'POST' and request.FILES.get('file'):
         uploaded_file = request.FILES['file']
-        # Read the uploaded file's content into memory
-        file_content = uploaded_file.read()
-        # Pass the file content directly to the vectorize function
-        vectorize.save_pdf_embeddings_to_database(file_content, chat_name, user)
-        return JsonResponse({'status': 'success', 'file_name': uploaded_file.name})
-    return JsonResponse({'status': 'please upload a valid pdf file'}, status=400)
+        doc_id = insert_chat_doc(chat_id, uploaded_file.name)
+        if doc_id is None:
+            return Response({'status': 'error', 'message': 'Failed to insert document'}, status=500)
+        else
+            # Read the uploaded file's content into memory
+            file_content = uploaded_file.read()
+            # Pass the file content directly to the vectorize function
+            vectorize.save_pdf_embeddings_to_database(file_content, chat_name, user)
+            return JsonResponse({'status': 'success', 'file_name': uploaded_file.name})
+        return JsonResponse({'status': 'please upload a valid pdf file'}, status=400)
 
 @api_view(['POST'])
 def url_embeddings(request):
     url = request.data.get('url')
-    user = request.data.get('user')
-    chat_name = request.data.get('chat_name')
-    vectorize.save_url_embeddings_to_database(url, user, chat_name)
-    return Response({'status': 'success'})
+    user = request.data.get('user_id')
+    chat_name = request.data.get('chat_id')
+    doc_id = insert_chat_doc(chat_id, url)
+    if doc_id is None:
+        return Response({'status': 'error', 'message': 'Failed to insert document'}, status=500)
+    else:
+        vectorize.save_url_embeddings_to_database(url, user, chat_name)
+        return Response({'status': 'success'})
 
 
 @api_view(['GET'])
@@ -180,7 +189,6 @@ def user_chats(request):
 
 
 @api_view(['POST'])
-@csrf_exempt
 def chat_ops(request):
     try:
         data = json.loads(request.body)
@@ -203,21 +211,21 @@ def chat_ops(request):
             result_id = insert_chat_document(user_id, chat_name)
             return JsonResponse({'status': 'success', 'chat_id': str(result_id)})
         
-        elif function == 'insert_chat_doc_id':
-            doc_id = data.get('doc_id')
-            insert_chat_doc_id(chat_id, doc_id)
+        elif function == 'insert_chat_doc':
+            doc = data.get('doc')
+            chat_id = data.get('chat_id')
+            doc_id = insert_chat_doc_id(chat_id, doc)
+            return JsonResponse({'status': 'success', 'doc_id': str(doc_id)})
         
-        elif function == 'delete_chat_doc_id':
-            doc_id = data.get('doc_id')
-            delete_chat_doc_id(chat_id, doc_id)
+        elif function == 'delete_chat_doc':
+            doc = data.get('doc')
+            chat_id = data.get('chat_id')
+            doc_id = delete_chat_doc_id(chat_id, doc)
+            return JsonResponse({'status': 'success', 'doc_id': str(doc_id)})
         
-        elif function == 'insert_chat_url_id':
+        elif function == 'delete_chat':
             url_id = data.get('url_id')
-            insert_chat_url_id(chat_id, url_id)
-        
-        elif function == 'delete_chat_url_id':
-            url_id = data.get('url_id')
-            delete_chat_url_id(chat_id, url_id)
+            delete_chat(chat_id)
         
         elif function == 'update_chat_name':
             new_chat_name = data.get('new_chat_name')
