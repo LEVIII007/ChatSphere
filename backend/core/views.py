@@ -42,9 +42,10 @@ from rest_framework import status
 from dotenv import load_dotenv
 import os
 from gpt import vectorize
+from langchain_mongodb.chat_message_histories import MongoDBChatMessageHistory
 load_dotenv()
 import io
-
+import json
 # MongoDB connection setup
 mongo_url = os.getenv('MONGODB_CONN_STRING')
 client = MongoClient(mongo_url)
@@ -107,17 +108,6 @@ def login(request):
     return Response({'token': token, 'user': {'username': username}})
 
 
-# @api_view(['POST'])
-# def upload_file(request):
-#     user = request.data.get('user')
-#     chat_name = request.data.get('chat_name')
-#     if request.method == 'POST' and request.FILES.get('file'):
-#         uploaded_file = request.FILES['file']
-#         file_name = default_storage.save(uploaded_file.name, uploaded_file)
-#         vectorize.save_pdf_embeddings_to_database(file_name, chat_name, user)
-#         return JsonResponse({'status': 'success', 'file_name': file_name})
-#     return JsonResponse({'status': 'please upload a valid pdf file'}, status=400)
-
 @api_view(['POST'])
 def upload_file(request):
     user = request.data.get('user')
@@ -143,6 +133,168 @@ def url_embeddings(request):
 @api_view(['GET'])
 def test_token(request):
     return Response({})
+
+
+@api_view(['POST'])
+def send_past_messages(request):
+    session = request.data.get("session_id")
+    connection_string = os.getenv("MONGODB_CONN_STRING")
+    database_name = os.getenv("DB_NAME")
+    collection_name = os.getenv("CHAT_COLLECTION_NAME")
+
+    # Establish a connection to MongoDB
+    client = MongoClient(connection_string)
+
+    # Access the specific database and collection
+    db = client[database_name]
+    collection = db[collection_name]
+
+    # Query the collection for documents with the specified session_id
+    messages = collection.find({"SessionId": session})
+
+    human_messages = []
+    ai_messages = []
+    for message in messages:
+        # Parse the History field from string to dictionary
+        history = json.loads(message['History'])
+        
+        # Extract type and content
+        msg_type = history.get("type")
+        content = history.get("data", {}).get("content", "")
+        
+        # Save messages based on their type
+        if msg_type == "human":
+            human_messages.append(content)
+        elif msg_type == "ai":
+            ai_messages.append(content)
+
+    return Response({"human_messages": human_messages, "ai_messages": ai_messages})
+
+
+@api_view(['POST'])
+def user_chats(request):
+    session = request.data.get("user_id")
+    connection_string = os.getenv("MONGODB_CONN_STRING")
+    database_name = os.getenv("DB_NAME")
+    collection_name = os.getenv("CHAT_COLLECTION_NAME")
+
+
+@api_view(['POST'])
+@csrf_exempt
+def chat_ops(request):
+    try:
+        data = json.loads(request.body)
+        function = data.get('function')
+        
+        # For operations other than creating a new chat, expect a chat_id
+        if function != 'insert_chat_document':
+            chat_id = data.get('chat_id')
+            # Ensure chat_id is in a proper format for MongoDB operations
+            if chat_id:
+                chat_id = str(ObjectId(chat_id))
+            else:
+                return JsonResponse({'status': 'error', 'message': 'chat_id is required for this operation'}, status=400)
+        else:
+            chat_id = None
+
+        if function == 'insert_chat_document':
+            user_id = data.get('user_id')
+            chat_name = data.get('chat_name')
+            result_id = insert_chat_document(user_id, chat_name)
+            return JsonResponse({'status': 'success', 'chat_id': str(result_id)})
+        
+        elif function == 'insert_chat_doc_id':
+            doc_id = data.get('doc_id')
+            insert_chat_doc_id(chat_id, doc_id)
+        
+        elif function == 'delete_chat_doc_id':
+            doc_id = data.get('doc_id')
+            delete_chat_doc_id(chat_id, doc_id)
+        
+        elif function == 'insert_chat_url_id':
+            url_id = data.get('url_id')
+            insert_chat_url_id(chat_id, url_id)
+        
+        elif function == 'delete_chat_url_id':
+            url_id = data.get('url_id')
+            delete_chat_url_id(chat_id, url_id)
+        
+        elif function == 'update_chat_name':
+            new_chat_name = data.get('new_chat_name')
+            update_chat_name(chat_id, new_chat_name)
+        
+        else:
+            return JsonResponse({'status': 'error', 'message': 'Invalid function specified'}, status=400)
+        
+        return JsonResponse({'status': 'success', 'chat_id': chat_id})
+    
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def get_chat_names(request):
+    try:
+        # Load JSON data from the request
+        data = json.loads(request.body)
+        user_id = data.get('user_id')
+        
+        if not user_id:
+            return JsonResponse({'status': 'error', 'message': 'user_id is required'}, status=400)
+        
+        # MongoDB connection details
+        connection_string = os.getenv('MONGODB_CONN_STRING')
+        database_name = os.getenv('DB_NAME')
+        client = MongoClient(connection_string)
+        db = client[database_name]
+        chat_collection = os.getenv('USERCHAT_COLLECTION_NAME')
+        
+        # Query to find all chats for the given user_id
+        chats = chat_collection.find({'user_id': user_id}, {'chat_name': 1})
+        
+        # Extract chat names from the query result
+        chat_names = [chat['chat_name'] for chat in chats]
+        
+        return JsonResponse({'status': 'success', 'chat_names': chat_names})
+    
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+
+
+
+
+
+
+# user :
+# email, username, picture, user_id
+
+# create a new user:
+# delete a user:
+# update a user:
+
+# chat:
+# chat_id, user_id, chat_name, chat_documents, chat_urls.
+
+# create a new chat:
+# delete a chat:
+# update a chat: delete docs, delete urls, change name
+
+
+# chat_messages:
+
+# chat_id, chat_history
+
+
+
+
+
+
+
+
+
 
 
 

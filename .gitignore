@@ -1,5 +1,12 @@
 # Python
 /Frontend/
+# /backend/gpt/retreiver1.py
+/backend/gpt/user.py
+/backend/gpt/app.py
+/backend/gpt/retreiver.py
+# /backend/gpt/chat.py
+
+
 test.rest
 __pycache__/
 *.pyc
